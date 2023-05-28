@@ -1,0 +1,96 @@
+# import requests
+import requests
+import boto3
+import json
+import csv
+import matplotlib.pyplot as plt
+from datetime import datetime
+import matplotlib.ticker as ticker
+import pandas as pd
+import io
+
+# Запит на сервер за JSON-файлом USD
+url = 'https://bank.gov.ua/NBU_Exchange/exchange_site?start=20210101&end=20211231&valcode=usd&sort=exchangedate&order=desc&json'
+response = requests.get(url)
+
+# Перетворення JSON-файлу в Python-об'єкт
+data = json.loads(response.content)
+
+# Відкриття CSV-файлу для запису
+with open('data_usd.csv', 'w', newline='') as csv_file:
+    writer = csv.writer(csv_file)
+
+    # Запис заголовків стовпців
+    headers = ['r030', 'txt', 'rate', 'cc', 'exchangedate']
+    writer.writerow(headers)
+
+    # Запис даних
+    for item in data:
+        writer.writerow([item['r030'], item['txt'], item['rate'], item['cc'], item['exchangedate']])
+        
+# Запит на сервер за JSON-файлом EUR
+url = 'https://bank.gov.ua/NBU_Exchange/exchange_site?start=20210101&end=20211231&valcode=eur&sort=exchangedate&order=desc&json'
+response = requests.get(url)
+
+# Перетворення JSON-файлу в Python-об'єкт
+data = json.loads(response.content)
+
+# Відкриття CSV-файлу для запису
+with open('data_eur.csv', 'w', newline='') as csv_file:
+    writer = csv.writer(csv_file)
+ 
+    # Запис заголовків стовпців
+    headers = ['r030', 'txt', 'rate', 'cc', 'exchangedate']
+    writer.writerow(headers)
+
+    # Запис даних
+    for item in data:
+        writer.writerow([item['r030'], item['txt'], item['rate'], item['cc'], item['exchangedate']])
+        
+        
+# Встановлення з'єднання з Amazon S3 для зчитування файлів
+s3 = boto3.client('s3')
+
+# Зчитування CSV-файлів
+with open('data_usd.csv', 'r') as csv_file:
+    reader = csv.reader(csv_file)
+    # Створення об'єкту S3 та вивантаження CSV-файлу
+    s3.put_object(Body=csv_file.read(), Bucket='datavalentine1', Key='data_usd_s3.csv')
+    
+with open('data_eur.csv', 'r') as csv_file:
+    reader = csv.reader(csv_file)
+    # Створення об'єкту S3 та вивантаження CSV-файлу
+    s3.put_object(Body=csv_file.read(), Bucket='datavalentine1', Key='data_eur_s3.csv')
+
+# Читання файлів з бакету та візуалізації курсу валют засобами Python (Побудова графіків)
+
+bucket_name = 'datavalentine1'   
+key1 = 'data_usd_s3.csv'
+key2 = 'data_eur_s3.csv'
+
+obj1 = s3.get_object(Bucket=bucket_name, Key=key1)
+obj2 = s3.get_object(Bucket=bucket_name, Key=key2)
+
+df1 = pd.read_csv(obj1['Body'])
+df2 = pd.read_csv(obj2['Body'])    
+    
+plt.plot(df1['exchangedate'], df1['rate'])
+plt.plot(df2['exchangedate'], df2['rate'])
+plt.legend(['Долар США', 'Євро'])
+plt.grid(True)
+plt.xlabel('Час')
+plt.ylabel('Курс гривні щодо іноземних валют')
+plt.title('Курси валют')
+# Задання підписів на вісі Х
+plt.gca().xaxis.set_major_locator(ticker.MultipleLocator(90))
+plt.savefig('figure.png')           
+plt.show()   
+
+# Збереження файлу з графіками на AWS S3
+s3 = boto3.resource('s3')
+bucket = s3.Bucket('datavalentine1')
+
+with open('figure.png', 'rb') as f:
+    binary_data = f.read()
+    bucket.put_object(Key='figure.png', Body=binary_data)
+
